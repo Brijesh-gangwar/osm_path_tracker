@@ -1,39 +1,18 @@
-<!--
-This README describes the package. If you publish this package to pub.dev,
-this README's contents appear on the landing page for your package.
+# 🗺️ OSM Path Tracker
 
-For information about how to write a good package README, see the guide for
-[writing package pages](https://dart.dev/tools/pub/writing-package-pages).
+A simple Flutter package for **live GPS tracking**, **path drawing**, and **navigation** on **OpenStreetMap (OSM)** using `flutter_map`.  
+`osm_path_tracker` helps you track a path in real-time, visualize it, and output a reusable model (`PathModel`) so you can store the tracked path **wherever you want** — Firebase, SQLite, REST APIs, or files.
 
-For general information about developing packages, see the Dart guide for
-[creating packages](https://dart.dev/guides/libraries/create-packages)
-and the Flutter guide for
-[developing packages and plugins](https://flutter.dev/to/develop-packages).
--->
+---
 
-TODO: Put a short description of the package here that helps potential users
-know whether this package might be useful for them.
+## ✨ Features
 
-## Features
+✅ Real-time GPS tracking with `geolocator`  
+✅ Draw path as polyline on OpenStreetMap  
+✅ Show start & end markers  
+✅ Navigate a saved path visually on the map  
+✅ Get distance, timestamp, and coordinates in a clean model (`PathModel`)  
+✅ Example app included
 
-TODO: List what your package can do. Maybe include images, gifs, or videos.
+---
 
-## Getting started
-
-TODO: List prerequisites and provide or point to information on how to
-start using the package.
-
-## Usage
-
-TODO: Include short and useful examples for package users. Add longer examples
-to `/example` folder.
-
-```dart
-const like = 'sample';
-```
-
-## Additional information
-
-TODO: Tell users more about the package: where to find more information, how to
-contribute to the package, how to file issues, what response they can expect
-from the package authors, and more.
