@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.2] - 2025-07-01
+
+### Changed
+- Improved README.md with clearer usage instructions and stronger unique value statement.
+- Added better function examples for uploading PathModel to Firestore or any custom HTTP server.
+- Improved developer documentation for easier integration.
+
 ## [0.0.1] - 2025-06-30
 
 ### Added
