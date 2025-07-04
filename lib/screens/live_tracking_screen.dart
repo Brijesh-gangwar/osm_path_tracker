@@ -1,4 +1,3 @@
-// lib/live_tracking.dart
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -9,7 +8,6 @@ import 'package:latlong2/latlong.dart';
 import '../models/path_model.dart';
 import '../utils/distance_utils.dart';
 
-
 class LiveTrackingScreen extends StatefulWidget {
   const LiveTrackingScreen({super.key});
 
@@ -19,14 +17,15 @@ class LiveTrackingScreen extends StatefulWidget {
 
 class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   final List<LatLng> _trackedPath = [];
-  StreamSubscription<Position>? _positionStream;
   final MapController _mapController = MapController();
+  final StreamController<LatLng> _locationController = StreamController.broadcast();
 
-  LatLng? _currentLocation;
+  StreamSubscription<Position>? _positionStream;
+
   bool _isLoading = true;
   bool _isSaving = false;
- final double _currentZoom = 17.0;
 
+  final double _currentZoom = 17.0;
   final LatLng _defaultCenter = const LatLng(37.7749, -122.4194);
 
   @override
@@ -37,7 +36,9 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
 
   @override
   void dispose() {
+    debugPrint("🔴 Disposing LiveTrackingScreen: cancelling position stream.");
     _positionStream?.cancel();
+    _locationController.close();
     super.dispose();
   }
 
@@ -68,54 +69,63 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     try {
       Position pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.best,
-        timeLimit: const Duration(seconds: 20),
       );
+
       if (!mounted) return;
 
+      final LatLng initialLoc = LatLng(pos.latitude, pos.longitude);
+      _locationController.add(initialLoc);
+
       setState(() {
-        _currentLocation = LatLng(pos.latitude, pos.longitude);
+        _trackedPath.add(initialLoc);
         _isLoading = false;
       });
-    } on TimeoutException {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Location request timed out.")),
-      );
-      Navigator.pop(context, null);
+
+      _mapController.move(initialLoc, _currentZoom);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to get location: $e")),
-      );
-      Navigator.pop(context, null);
+      _showError("Failed to get location: $e");
+      Navigator.pop(context);
     }
   }
 
   void _startTracking() {
+    
+    _positionStream?.cancel();
+
     const LocationSettings settings = LocationSettings(
       accuracy: LocationAccuracy.best,
-      distanceFilter: 1,
+      distanceFilter: 2, 
     );
 
     _positionStream = Geolocator.getPositionStream(locationSettings: settings)
         .listen((Position pos) {
-      final newLoc = LatLng(pos.latitude, pos.longitude);
+      final LatLng newLoc = LatLng(pos.latitude, pos.longitude);
 
-      if (_trackedPath.isNotEmpty &&
-          _trackedPath.last.latitude == newLoc.latitude &&
-          _trackedPath.last.longitude == newLoc.longitude) {
+      if (pos.accuracy > 20) {
+        debugPrint("🚫 Ignored point: poor accuracy ${pos.accuracy}m");
         return;
       }
 
-      setState(() {
+      if (_trackedPath.isEmpty || _hasMovedSignificantly(_trackedPath.last, newLoc, minDistanceMeters: 2)) {
         _trackedPath.add(newLoc);
-        _currentLocation = newLoc;
-      });
+        _locationController.add(newLoc);
+        _mapController.move(newLoc, _currentZoom);
 
-      _mapController.move(newLoc, _currentZoom);
+        debugPrint("✅ Added point: ${newLoc.latitude}, ${newLoc.longitude}");
+      } else {
+        debugPrint("🟡 Ignored: move < 2m (jitter)");
+      }
     });
+
+    debugPrint("✅ Started new position stream.");
+  }
+
+  bool _hasMovedSignificantly(LatLng last, LatLng current, {double minDistanceMeters = 2}) {
+    final Distance distance = const Distance();
+    final meters = distance.as(LengthUnit.Meter, last, current);
+    debugPrint("📏 Distance to last: ${meters.toStringAsFixed(2)} meters");
+    return meters >= minDistanceMeters;
   }
 
   void _showError(String message) {
@@ -134,32 +144,16 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     );
   }
 
-  // double _calculateDistance(List<LatLng> path) {
-  //   const Distance distance = Distance();
-  //   double totalDistance = 0;
-  //   for (int i = 0; i < path.length - 1; i++) {
-  //     totalDistance += distance(path[i], path[i + 1]);
-  //   }
-  //   return totalDistance / 1000; // km
-  // }
+  Future<void> _savePath() async {
+    if (_trackedPath.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("No path to save!")),
+      );
+      return;
+    }
 
-// Inside your LiveTrackingScreen:
-Future<void> _savePath() async {
-  if (_trackedPath.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("No path to save!")),
-    );
-    return;
-  }
-
-  setState(() {
-    _isSaving = true;
-  });
-
-  await Future.delayed(const Duration(seconds: 1));
-
-  if (mounted) {
-    setState(() => _isSaving = false);
+    setState(() => _isSaving = true);
+    await Future.delayed(const Duration(seconds: 1));
 
     final distance = DistanceUtils.calculateDistance(_trackedPath);
     final pathModel = PathModel(
@@ -168,14 +162,14 @@ Future<void> _savePath() async {
       timestamp: DateTime.now(),
     );
 
-    Navigator.pop(context, pathModel);
+    if (mounted) {
+      setState(() => _isSaving = false);
+      Navigator.pop(context, pathModel);
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
-    final LatLng mapCenter = _currentLocation ?? _defaultCenter;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text("Live Tracking"),
@@ -188,51 +182,51 @@ Future<void> _savePath() async {
       ),
       body: Stack(
         children: [
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: mapCenter,
-              initialZoom: _currentZoom,
-              maxZoom: 19.0,
-              minZoom: 5.0,
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-              ),
-              if (_trackedPath.isNotEmpty)
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: _trackedPath,
-                      strokeWidth: 6,
-                      color: Colors.blue,
-                    ),
-                  ],
+          StreamBuilder<LatLng>(
+            stream: _locationController.stream,
+            builder: (context, snapshot) {
+              final LatLng center = snapshot.data ?? _defaultCenter;
+
+              return FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter: center,
+                  initialZoom: _currentZoom,
                 ),
-              MarkerLayer(
-                markers: [
-                  Marker(
-                    point: mapCenter,
-                    width: 40,
-                    height: 40,
-                    child: const Icon(
-                      Icons.location_on,
-                      color: Colors.red,
-                      size: 40,
+                children: [
+                  TileLayer(
+                    urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                  ),
+                  if (_trackedPath.isNotEmpty)
+                    PolylineLayer(
+                      polylines: [
+                        Polyline(
+                          points: _trackedPath,
+                          strokeWidth: 6,
+                          color: Colors.blue,
+                        ),
+                      ],
                     ),
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: center,
+                        width: 40,
+                        height: 40,
+                        child: const Icon(
+                          Icons.location_on,
+                          color: Colors.red,
+                          size: 40,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
-              ),
-            ],
+              );
+            },
           ),
-
           if (_isLoading)
-            Container(
-              color: Colors.black26,
-              child: const Center(child: CircularProgressIndicator()),
-            ),
-
+            const Center(child: CircularProgressIndicator()),
           if (_isSaving)
             Container(
               color: Colors.black38,
