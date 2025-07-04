@@ -1,6 +1,6 @@
 name: osm_path_tracker
 description: "A Flutter package for live tracking and path navigation using OpenStreetMap (OSM) tiles."
-version: 0.0.2
+version: 0.0.3
 homepage: https://github.com/Brijesh-gangwar/osm_path_tracker
 repository : https://github.com/Brijesh-gangwar/osm_path_tracker
 environment:
