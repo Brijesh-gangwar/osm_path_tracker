@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.3] - 2025-07-05
+
+### Added
+- Introduced real **Streams** for live location updates: using `StreamController` and `StreamSubscription` to listen for GPS positions in real time.
+- Integrated `StreamBuilder` in the UI to redraw the map marker and polyline automatically when new location data arrives.
+- Added a **timeout** (`20s`) to `getCurrentPosition()` to prevent waiting forever for GPS lock.
+- Added **accuracy filter**: ignores updates with GPS accuracy worse than 20 meters.
+- Added **minimum distance filter** (`2 meters`) to reduce small GPS jitter that causes false path points.
+- Added debug logs to show how Streams accept or discard new points.
+- Improved resource handling: **cancels Streams** properly when closing the screen to avoid battery drain or leaks.
+
+
 ## [0.0.2] - 2025-07-01
 
 ### Changed

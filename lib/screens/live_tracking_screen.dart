@@ -1,4 +1,3 @@
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -69,6 +68,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     try {
       Position pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.best,
+        timeLimit: const Duration(seconds: 30),
       );
 
       if (!mounted) return;
@@ -82,20 +82,27 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
       });
 
       _mapController.move(initialLoc, _currentZoom);
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Location request timed out.")),
+      );
+      Navigator.pop(context, null);
     } catch (e) {
       if (!mounted) return;
+      setState(() => _isLoading = false);
       _showError("Failed to get location: $e");
-      Navigator.pop(context);
+      Navigator.pop(context, null);
     }
   }
 
   void _startTracking() {
-    
     _positionStream?.cancel();
 
     const LocationSettings settings = LocationSettings(
       accuracy: LocationAccuracy.best,
-      distanceFilter: 2, 
+      distanceFilter: 2,
     );
 
     _positionStream = Geolocator.getPositionStream(locationSettings: settings)
