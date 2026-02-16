@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
-
 import '../models/path_model.dart';
 import '../utils/distance_utils.dart';
 
@@ -16,141 +15,101 @@ class LiveTrackingScreen extends StatefulWidget {
 
 class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   final List<LatLng> _trackedPath = [];
+  final List<LatLng> _customPoints = [];
   final MapController _mapController = MapController();
-  final StreamController<LatLng> _locationController = StreamController.broadcast();
+  StreamController<LatLng>? _locationController;
 
+  LatLng? _lastLocation;
   StreamSubscription<Position>? _positionStream;
-
-  bool _isLoading = true;
   bool _isSaving = false;
-
-  final double _currentZoom = 17.0;
-  final LatLng _defaultCenter = const LatLng(37.7749, -122.4194);
 
   @override
   void initState() {
     super.initState();
-    _initLocation();
+    _startTracking();
   }
 
   @override
   void dispose() {
-    debugPrint("🔴 Disposing LiveTrackingScreen: cancelling position stream.");
-    _positionStream?.cancel();
-    _locationController.close();
+    _stopTracking(); // ensure everything is stopped
     super.dispose();
   }
 
-  Future<void> _initLocation() async {
-    if (!await Geolocator.isLocationServiceEnabled()) {
-      _showError("Location services are disabled.");
-      return;
-    }
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        _showError("Permission denied.");
-        return;
-      }
-    }
-    if (permission == LocationPermission.deniedForever) {
-      _showError("Permission permanently denied.");
-      return;
-    }
-
-    await _getCurrentLocation();
-    _startTracking();
-  }
-
-  Future<void> _getCurrentLocation() async {
-    try {
-      Position pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.best,
-        timeLimit: const Duration(seconds: 30),
-      );
-
-      if (!mounted) return;
-
-      final LatLng initialLoc = LatLng(pos.latitude, pos.longitude);
-      _locationController.add(initialLoc);
-
-      setState(() {
-        _trackedPath.add(initialLoc);
-        _isLoading = false;
-      });
-
-      _mapController.move(initialLoc, _currentZoom);
-    } on TimeoutException {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Location request timed out.")),
-      );
-      Navigator.pop(context, null);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      _showError("Failed to get location: $e");
-      Navigator.pop(context, null);
-    }
-  }
-
-  void _startTracking() {
+  /// ✅ Stop previous tracking session safely
+  void _stopTracking() {
     _positionStream?.cancel();
+    _positionStream = null;
+
+    _locationController?.close();
+    _locationController = null;
+  }
+
+  /// ✅ Start live tracking (stops previous first)
+  void _startTracking() async {
+    _stopTracking(); // stop any previous tracking engine
+
+    _locationController = StreamController<LatLng>.broadcast();
+
+    LocationPermission permission = await Geolocator.requestPermission();
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Location permission denied")),
+        );
+      }
+      return;
+    }
 
     const LocationSettings settings = LocationSettings(
-      accuracy: LocationAccuracy.best,
-      distanceFilter: 2,
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 5,
     );
 
     _positionStream = Geolocator.getPositionStream(locationSettings: settings)
         .listen((Position pos) {
-      final LatLng newLoc = LatLng(pos.latitude, pos.longitude);
+      final newLoc = LatLng(pos.latitude, pos.longitude);
+      _lastLocation = newLoc;
 
-      if (pos.accuracy > 20) {
-        debugPrint("🚫 Ignored point: poor accuracy ${pos.accuracy}m");
-        return;
-      }
-
-      if (_trackedPath.isEmpty || _hasMovedSignificantly(_trackedPath.last, newLoc, minDistanceMeters: 2)) {
+      setState(() {
         _trackedPath.add(newLoc);
-        _locationController.add(newLoc);
-        _mapController.move(newLoc, _currentZoom);
+      });
 
-        debugPrint("✅ Added point: ${newLoc.latitude}, ${newLoc.longitude}");
-      } else {
-        debugPrint("🟡 Ignored: move < 2m (jitter)");
-      }
+      _locationController?.add(newLoc);
+      _mapController.move(newLoc, _mapController.camera.zoom);
+    });
+  }
+
+  /// ✅ Add unique custom marker at last location
+  void _addCustomMarker() {
+    if (_lastLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Waiting for current location...")),
+      );
+      return;
+    }
+
+    bool exists = _customPoints.any((p) =>
+        p.latitude == _lastLocation!.latitude &&
+        p.longitude == _lastLocation!.longitude);
+
+    if (exists) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Marker already exists here!")),
+      );
+      return;
+    }
+
+    setState(() {
+      _customPoints.add(_lastLocation!);
     });
 
-    debugPrint("✅ Started new position stream.");
-  }
-
-  bool _hasMovedSignificantly(LatLng last, LatLng current, {double minDistanceMeters = 2}) {
-    final Distance distance = const Distance();
-    final meters = distance.as(LengthUnit.Meter, last, current);
-    debugPrint("📏 Distance to last: ${meters.toStringAsFixed(2)} meters");
-    return meters >= minDistanceMeters;
-  }
-
-  void _showError(String message) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Error"),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("OK"),
-          ),
-        ],
-      ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("✅ Custom marker added")),
     );
   }
 
+  /// ✅ Save tracked path and dispose tracking
   Future<void> _savePath() async {
     if (_trackedPath.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -167,7 +126,10 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
       path: _trackedPath,
       distance: distance,
       timestamp: DateTime.now(),
+      customPoints: _customPoints,
     );
+
+    _stopTracking(); // stop all engines before returning
 
     if (mounted) {
       setState(() => _isSaving = false);
@@ -182,64 +144,88 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         title: const Text("Live Tracking"),
         actions: [
           IconButton(
-            icon: const Icon(Icons.stop),
-            onPressed: _savePath,
+            icon: _isSaving
+                ? const CircularProgressIndicator(color: Colors.white)
+                : const Icon(Icons.save),
+            onPressed: _isSaving ? null : _savePath,
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          StreamBuilder<LatLng>(
-            stream: _locationController.stream,
-            builder: (context, snapshot) {
-              final LatLng center = snapshot.data ?? _defaultCenter;
+      body: _locationController == null
+          ? const Center(child: CircularProgressIndicator())
+          : StreamBuilder<LatLng>(
+              stream: _locationController!.stream,
+              builder: (context, snapshot) {
+                LatLng? center =
+                    _lastLocation ?? (_trackedPath.isNotEmpty ? _trackedPath.last : null);
 
-              return FlutterMap(
-                mapController: _mapController,
-                options: MapOptions(
-                  initialCenter: center,
-                  initialZoom: _currentZoom,
-                ),
-                children: [
-                  TileLayer(
-                    urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                  ),
-                  if (_trackedPath.isNotEmpty)
-                    PolylineLayer(
-                      polylines: [
-                        Polyline(
-                          points: _trackedPath,
-                          strokeWidth: 6,
-                          color: Colors.blue,
+                if (center == null) {
+                  return const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text("Fetching location..."),
+                      ],
+                    ),
+                  );
+                }
+
+                return FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(initialCenter: center, initialZoom: 15),
+                  children: [
+                    TileLayer(
+                      urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                      userAgentPackageName: "com.example.osm_path_tracker",
+                    ),
+                    if (_trackedPath.isNotEmpty)
+                      PolylineLayer(
+                        polylines: [
+                          Polyline(
+                            points: _trackedPath,
+                            strokeWidth: 4,
+                            color: Colors.blue,
+                          ),
+                        ],
+                      ),
+                    MarkerLayer(
+                      markers: [
+                        if (_trackedPath.isNotEmpty)
+                          Marker(
+                            point: _trackedPath.first,
+                            width: 40,
+                            height: 40,
+                            child: const Icon(Icons.location_on,
+                                color: Colors.red, size: 30),
+                          ),
+                        if (_lastLocation != null)
+                          Marker(
+                            point: _lastLocation!,
+                            width: 40,
+                            height: 40,
+                            child: const Icon(Icons.circle,
+                                color: Colors.blue, size: 20),
+                          ),
+                        ..._customPoints.map(
+                          (point) => Marker(
+                            point: point,
+                            width: 30,
+                            height: 30,
+                            child: const Icon(Icons.push_pin,
+                                color: Colors.black, size: 28),
+                          ),
                         ),
                       ],
                     ),
-                  MarkerLayer(
-                    markers: [
-                      Marker(
-                        point: center,
-                        width: 40,
-                        height: 40,
-                        child: const Icon(
-                          Icons.location_on,
-                          color: Colors.red,
-                          size: 40,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              );
-            },
-          ),
-          if (_isLoading)
-            const Center(child: CircularProgressIndicator()),
-          if (_isSaving)
-            Container(
-              color: Colors.black38,
-              child: const Center(child: CircularProgressIndicator()),
+                  ],
+                );
+              },
             ),
-        ],
+      floatingActionButton: FloatingActionButton(
+        onPressed: _addCustomMarker,
+        child: const Icon(Icons.add_location_alt),
       ),
     );
   }

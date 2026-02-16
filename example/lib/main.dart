@@ -36,43 +36,50 @@ class _ExampleHomeState extends State<ExampleHome> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // Start Live Tracking
             ElevatedButton(
-              child: const Text('Track new path'),
+              child: const Text('Track New Path'),
               onPressed: () async {
-                final result = await Navigator.push(
+                final result = await Navigator.push<PathModel>(
                   context,
-                  MaterialPageRoute(builder: (_) => const LiveTrackingScreen()),
+                  MaterialPageRoute(
+                    builder: (_) => const LiveTrackingScreen(),
+                  ),
                 );
 
-                if (result is PathModel) {
+                if (result != null) {
                   setState(() {
                     savedPath = result;
                   });
                 }
               },
             ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed:
-                  savedPath == null
-                      ? null
-                      : () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder:
-                                (_) =>
-                                    PathNavigationScreen(path: savedPath!.path),
-                          ),
-                        );
-                      },
 
-              child: const Text('Show tracked path'),
-            ),
             const SizedBox(height: 20),
+
+            // Navigate Path
+            ElevatedButton(
+              onPressed: savedPath == null
+                  ? null
+                  : () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              PathNavigationScreen( pathModel: savedPath!),
+                        ),
+                      );
+                    },
+              child: const Text('Navigate Saved Path'),
+            ),
+
+            const SizedBox(height: 30),
+
+            // Summary info
             if (savedPath != null) ...[
               Text('Distance: ${savedPath!.distance.toStringAsFixed(2)} km'),
               Text('Time: ${savedPath!.timestamp}'),
+              Text('Points: ${savedPath!.path.length}'),
             ],
           ],
         ),

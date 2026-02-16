@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.4] - 2026-02-16
+
+### Changed
+- Added **customPoints** list in **PathModel** to store user-defined points along with path.
+- Changes in **LiveTrackingScreen** and **PathNavigationScreen** implementation.
+- Updated **main.dart** file in example.
+
+
 ## [0.0.3] - 2025-07-05
 
 ### Added

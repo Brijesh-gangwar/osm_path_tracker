@@ -48,3 +48,6 @@ example/macos/
 example/windows/
 example/linux/
 example/web/
+
+
+lib/models/MarkerModel.dart

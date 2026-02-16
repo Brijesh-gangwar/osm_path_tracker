@@ -15,6 +15,7 @@ A simple Flutter package for **live GPS tracking** , **path drawing**, and **nav
 - 📏 Automatic distance calculation (in kilometers)
 - 🔄 Navigate a saved path visually on the OSM map 
 - 💾 You decide how to store: local DB, Firebase, or any backend!
+- ✨ Store custom user-defined coordinates as list which can be favorite, checkpoints, etc.
 
 ---
 
@@ -30,7 +31,7 @@ A simple Flutter package for **live GPS tracking** , **path drawing**, and **nav
 
  1️⃣ Live Tracking:
 - Use LiveTrackingScreen to track user location in real time. 
-- It returns a PathModel which contains a tracked path (list of coordinates in form of latitudes and longitudes) with distance and timestamp.
+- It returns a PathModel which contains a tracked path (list of coordinates in form of latitudes and longitudes) with distance, timestamp and list of custom user-defined coordinates.
 
 ```dart
 
@@ -40,6 +41,8 @@ class PathModel {
   final List<LatLng> path;
   final double distance; // in kilometers
   final DateTime timestamp;
+  final List<LatLng> customPoints; // important user-defined points
+
 }
 
 ```
