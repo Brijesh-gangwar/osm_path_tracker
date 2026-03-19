@@ -1,157 +1,213 @@
-# 🗺️ OSM Path Tracker
+# OSM Path Tracker
 
-A simple Flutter package for **live GPS tracking** , **path drawing**, and **navigation** on **OpenStreetMap (OSM)** using `flutter_map`.  
+A Flutter package for live GPS tracking, path saving, optional path compression, and path navigation on OpenStreetMap using `flutter_map`.
 
-`osm_path_tracker` helps you track a path in real-time, visualize it, and output a reusable model (`PathModel`) so you can store the tracked path **wherever you want** — Firebase, SQLite, REST APIs, or files.
+`osm_path_tracker` helps you:
+- track a route in real time,
+- save a clean reusable `PathModel`,
+- optionally compress that route into an `EncodedPathModel`,
+- and render either raw or encoded paths in the navigation screen.
 
----
+It is built for apps that need more than a simple A-to-B route. Use it to capture real movement, store journeys in your own backend, and visualize them later on OpenStreetMap.
 
+## Features
 
-## ✨ Features
- 
-- 📍 Real-time GPS tracking with `geolocator` 
-- 🗺️ OpenStreetMap (OSM) integration using `flutter_map`
-✅ Get distance, timestamp, and coordinates in a clean model (`PathModel`) 
-- 📏 Automatic distance calculation (in kilometers)
-- 🔄 Navigate a saved path visually on the OSM map 
-- 💾 You decide how to store: local DB, Firebase, or any backend!
-- ✨ Store custom user-defined coordinates as list which can be favorite, checkpoints, etc.
+- Real-time GPS tracking with `geolocator`
+- OpenStreetMap integration with `flutter_map`
+- Reusable `PathModel` for raw saved paths
+- Optional `PathCompressionUtils` for distance-threshold filtering, Douglas-Peucker simplification, precision reduction, and Google-style polyline encoding
+- Separate `EncodedPathModel` for encoded path workflows
+- Path navigation from either raw or encoded route data
+- Custom saved points via `customPoints`
 
----
+## Why Use It?
 
-## ✨ Why Use It?
+Use it when you want to:
+- build fitness, delivery, travel, GIS, patrol, or field-service apps
+- save full user movement paths instead of just source and destination
+- store path data in Firebase, SQLite, REST APIs, or your own backend
+- optionally compress paths before sending or storing them
+- navigate with either raw coordinates or encoded route data
 
-
-`osm_path_tracker` makes **live path tracking** easy: capture the full journey, **visualize** it on **OpenStreetMap**, and **store** it anywhere — local database, Firebase, or your own server.
- Track, draw, and save **complete GPS paths** — not just **A-to-B routes**. Own your data and **build powerful location features** on your terms, with no vendor lock-in.
-
----
-
-## ⚙️ How It Works
-
- 1️⃣ Live Tracking:
-- Use LiveTrackingScreen to track user location in real time. 
-- It returns a PathModel which contains a tracked path (list of coordinates in form of latitudes and longitudes) with distance, timestamp and list of custom user-defined coordinates.
-
-```dart
-
-import 'package:latlong2/latlong.dart';
-
-class PathModel {
-  final List<LatLng> path;
-  final double distance; // in kilometers
-  final DateTime timestamp;
-  final List<LatLng> customPoints; // important user-defined points
-
-}
-
-```
-
-
-2️⃣ Path Storage:
-- The returned PathModel can be stored wherever you like — Firebase, SQLite, or a custom API.
-
-3️⃣ Path Navigation:
-- Display any saved ( or tracked ) path using PathNavigationScreen.
-
----
-
-## 🚀 Installation
+## Installation
 
 Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-    osm_path_tracker: ^<latest_version>
+  osm_path_tracker: ^0.0.5
 ```
 
-Then run in your terminal :
+Then run:
 
 ```bash
 flutter pub get
 ```
 
-Check your `pubspec.yaml` file whether package is installed properly.
+## Models
 
----
+### `PathModel`
 
-## 🛠️ Usage
+The base model returned by `LiveTrackingScreen`.
+
+```dart
+class PathModel {
+  final List<LatLng> path;
+  final double distance;
+  final DateTime timestamp;
+  final List<LatLng> customPoints;
+}
+```
+
+### `EncodedPathModel`
+
+Use this when you want an encoded/compressed representation of a saved route.
+
+```dart
+class EncodedPathModel {
+  final PathModel pathModel;
+  final String encodedPath;
+  final int polylinePrecision;
+  final int originalPointCount;
+  final int compressedPointCount;
+  final double compressedDistance;
+}
+```
+
+## How It Works
+
+### Live Tracking
+
+`LiveTrackingScreen` listens to GPS updates, draws the route on OpenStreetMap, and returns a `PathModel` containing:
+- `path`
+- `distance`
+- `timestamp`
+- `customPoints`
+
+### Optional Compression
+
+If your app needs a smaller transferable representation, you can pass the saved `PathModel` into `PathCompressionUtils`. That utility can:
+- filter noisy points using minimum-distance thresholding
+- simplify the route using the Douglas-Peucker algorithm
+- reduce coordinate precision
+- encode the result as a polyline string
+
+### Navigation
+
+`PathNavigationScreen` can render either:
+- a raw `PathModel`
+- an `EncodedPathModel`
+
+## Usage
 
 Import the package:
 
 ```dart
 import 'package:osm_path_tracker/osm_path_tracker.dart';
-
 ```
 
-### Add Android Permissions
-
-Add these lines to your AndroidManifest.xml:
+### Track and Save a Raw Path
 
 ```dart
-
-
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-
-    // add this to enable background location
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
-
-    // add this to enable internet
-    <uses-permission android:name="android.permission.INTERNET"/>
-
-```
-
-### Basic Usage
-
-```dart
-
-// Use in your screen and stores path as savedpath from live tracking screen
-
-final result = await Navigator.push(
+final rawPath = await Navigator.push<PathModel>(
   context,
-  MaterialPageRoute(builder: (_) => const LiveTrackingScreen()),
+  MaterialPageRoute(
+    builder: (_) => const LiveTrackingScreen(),
+  ),
 );
 
-if (result is PathModel) {
-  setState(() {
-    savedPath = result;
-  });
-}
-
-  // upload to Firestore
-  await uploadPathToFirestore(savedPath!);
-
-// upload to Http Server
-   await uploadPathToHttp(savedPath!, 'https://your-api.com/upload');
-
-
+if (rawPath == null) return;
 ```
 
-#### Upload to Firestore (Firebase)
-Add this helper to your project :
+### Optionally Compress the Saved Path
 
 ```dart
+final encodedPath = PathCompressionUtils.compressPathModel(
+  rawPath,
+  minimumDistanceMeters: 10,
+  simplificationToleranceMeters: 15,
+  precision: 5,
+);
+```
 
+### Navigate with a Raw Path
+
+```dart
+Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (_) => PathNavigationScreen(pathModel: rawPath),
+  ),
+);
+```
+
+### Navigate with an Encoded Path
+
+```dart
+Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (_) => PathNavigationScreen(
+      encodedPathModel: encodedPath,
+    ),
+  ),
+);
+```
+
+## Path Compression
+
+`PathCompressionUtils` supports this pipeline:
+
+```text
+GPS Stream
+  -> Minimum-Distance Noise Filtering
+  -> Douglas-Peucker Simplification
+  -> Precision Reduction
+  -> Polyline Encoding
+```
+
+Available controls:
+- `minimumDistanceMeters`
+- `simplificationToleranceMeters`
+- `precision`
+
+Example:
+
+```dart
+final result = PathCompressionUtils.compressPath(
+  rawPath.path,
+  minimumDistanceMeters: 10,
+  simplificationToleranceMeters: 15,
+  precision: 5,
+  preservePoints: rawPath.customPoints,
+);
+```
+
+## Android Permissions
+
+Add these permissions to `AndroidManifest.xml`:
+
+```xml
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+<uses-permission android:name="android.permission.INTERNET" />
+```
+
+## Example Storage Helpers
+
+### Firestore
+
+```dart
 Future<void> uploadPathToFirestore(PathModel path) async {
   final firestore = FirebaseFirestore.instance;
-
-  final pathData = path.toJson();
-
-  await firestore
-      .collection('paths') 
-      .add(pathData);
-
-  print('✅ Path uploaded to Firestore!');
+  await firestore.collection('paths').add(path.toJson());
 }
-
 ```
 
-#### Upload to HTTP server
-Add this helper to your project :
+### HTTP API
 
 ```dart
-
 Future<void> uploadPathToHttp(PathModel path, String apiUrl) async {
   final response = await http.post(
     Uri.parse(apiUrl),
@@ -159,34 +215,33 @@ Future<void> uploadPathToHttp(PathModel path, String apiUrl) async {
     body: jsonEncode(path.toJson()),
   );
 
-  if (response.statusCode == 200 || response.statusCode == 201) {
-    print('✅ Path uploaded successfully!');
-  } else {
-    throw Exception('❌ Failed to upload path: ${response.statusCode}');
+  if (response.statusCode != 200 && response.statusCode != 201) {
+    throw Exception('Failed to upload path: ${response.statusCode}');
   }
 }
-
 ```
 
-See the [example app](example/) for a complete implementation.
+## Notes
 
----
+- `LiveTrackingScreen` returns the raw tracked path.
+- Compression is opt-in and should be called explicitly by your app.
+- `PathNavigationScreen` accepts exactly one of `pathModel` or `encodedPathModel`.
 
-
-## 📚 Documentation
+## Documentation
 
 - [API Reference](https://pub.dev/documentation/osm_path_tracker/latest/)
-- [Example Usage](example/)
+- [Example App](example/)
+- [Changelog](CHANGELOG.md)
 
----
+## Contributions
 
-## 💡 Contributions
+Contributions and issues are welcome.
 
-Contributions and issues are welcome!  
-Please open an issue or submit a pull request.
+If you want to improve the package:
+- open an issue for bugs or feature requests
+- submit a pull request with improvements
+- update tests and docs when you add new functionality
 
----
-
-## 📄 License
+## License
 
 This project is licensed under the MIT License.
