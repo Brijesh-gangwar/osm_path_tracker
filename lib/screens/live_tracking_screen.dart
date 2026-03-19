@@ -1,12 +1,16 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+
 import '../models/path_model.dart';
 import '../utils/distance_utils.dart';
 
+/// A screen that records GPS updates and returns a saved [PathModel].
 class LiveTrackingScreen extends StatefulWidget {
+  /// Creates a live tracking screen that saves a raw path when the user taps save.
   const LiveTrackingScreen({super.key});
 
   @override
@@ -31,11 +35,10 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
 
   @override
   void dispose() {
-    _stopTracking(); // ensure everything is stopped
+    _stopTracking();
     super.dispose();
   }
 
-  /// ✅ Stop previous tracking session safely
   void _stopTracking() {
     _positionStream?.cancel();
     _positionStream = null;
@@ -44,9 +47,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     _locationController = null;
   }
 
-  /// ✅ Start live tracking (stops previous first)
   void _startTracking() async {
-    _stopTracking(); // stop any previous tracking engine
+    _stopTracking();
 
     _locationController = StreamController<LatLng>.broadcast();
 
@@ -66,8 +68,9 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
       distanceFilter: 5,
     );
 
-    _positionStream = Geolocator.getPositionStream(locationSettings: settings)
-        .listen((Position pos) {
+    _positionStream = Geolocator.getPositionStream(
+      locationSettings: settings,
+    ).listen((Position pos) {
       final newLoc = LatLng(pos.latitude, pos.longitude);
       _lastLocation = newLoc;
 
@@ -80,7 +83,6 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     });
   }
 
-  /// ✅ Add unique custom marker at last location
   void _addCustomMarker() {
     if (_lastLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -89,9 +91,11 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
       return;
     }
 
-    bool exists = _customPoints.any((p) =>
-        p.latitude == _lastLocation!.latitude &&
-        p.longitude == _lastLocation!.longitude);
+    final exists = _customPoints.any(
+      (p) =>
+          p.latitude == _lastLocation!.latitude &&
+          p.longitude == _lastLocation!.longitude,
+    );
 
     if (exists) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -104,36 +108,34 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
       _customPoints.add(_lastLocation!);
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("✅ Custom marker added")),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text("Custom marker added")));
   }
 
-  /// ✅ Save tracked path and dispose tracking
   Future<void> _savePath() async {
     if (_trackedPath.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("No path to save!")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("No path to save!")));
       return;
     }
 
     setState(() => _isSaving = true);
     await Future.delayed(const Duration(seconds: 1));
 
-    final distance = DistanceUtils.calculateDistance(_trackedPath);
-    final pathModel = PathModel(
+    final rawPathModel = PathModel(
       path: _trackedPath,
-      distance: distance,
+      distance: DistanceUtils.calculateDistance(_trackedPath),
       timestamp: DateTime.now(),
       customPoints: _customPoints,
     );
 
-    _stopTracking(); // stop all engines before returning
+    _stopTracking();
 
     if (mounted) {
       setState(() => _isSaving = false);
-      Navigator.pop(context, pathModel);
+      Navigator.pop(context, rawPathModel);
     }
   }
 
@@ -144,85 +146,98 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         title: const Text("Live Tracking"),
         actions: [
           IconButton(
-            icon: _isSaving
-                ? const CircularProgressIndicator(color: Colors.white)
-                : const Icon(Icons.save),
+            icon:
+                _isSaving
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Icon(Icons.save),
             onPressed: _isSaving ? null : _savePath,
           ),
         ],
       ),
-      body: _locationController == null
-          ? const Center(child: CircularProgressIndicator())
-          : StreamBuilder<LatLng>(
-              stream: _locationController!.stream,
-              builder: (context, snapshot) {
-                LatLng? center =
-                    _lastLocation ?? (_trackedPath.isNotEmpty ? _trackedPath.last : null);
+      body:
+          _locationController == null
+              ? const Center(child: CircularProgressIndicator())
+              : StreamBuilder<LatLng>(
+                stream: _locationController!.stream,
+                builder: (context, snapshot) {
+                  final center =
+                      _lastLocation ??
+                      (_trackedPath.isNotEmpty ? _trackedPath.last : null);
 
-                if (center == null) {
-                  return const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 16),
-                        Text("Fetching location..."),
-                      ],
-                    ),
-                  );
-                }
+                  if (center == null) {
+                    return const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16),
+                          Text("Fetching location..."),
+                        ],
+                      ),
+                    );
+                  }
 
-                return FlutterMap(
-                  mapController: _mapController,
-                  options: MapOptions(initialCenter: center, initialZoom: 15),
-                  children: [
-                    TileLayer(
-                      urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                      userAgentPackageName: "com.example.osm_path_tracker",
-                    ),
-                    if (_trackedPath.isNotEmpty)
-                      PolylineLayer(
-                        polylines: [
-                          Polyline(
-                            points: _trackedPath,
-                            strokeWidth: 4,
-                            color: Colors.blue,
+                  return FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(initialCenter: center, initialZoom: 15),
+                    children: [
+                      TileLayer(
+                        urlTemplate:
+                            "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                        userAgentPackageName: "com.example.osm_path_tracker",
+                      ),
+                      if (_trackedPath.isNotEmpty)
+                        PolylineLayer(
+                          polylines: [
+                            Polyline(
+                              points: _trackedPath,
+                              strokeWidth: 4,
+                              color: Colors.blue,
+                            ),
+                          ],
+                        ),
+                      MarkerLayer(
+                        markers: [
+                          if (_trackedPath.isNotEmpty)
+                            Marker(
+                              point: _trackedPath.first,
+                              width: 40,
+                              height: 40,
+                              child: const Icon(
+                                Icons.location_on,
+                                color: Colors.red,
+                                size: 30,
+                              ),
+                            ),
+                          if (_lastLocation != null)
+                            Marker(
+                              point: _lastLocation!,
+                              width: 40,
+                              height: 40,
+                              child: const Icon(
+                                Icons.circle,
+                                color: Colors.blue,
+                                size: 20,
+                              ),
+                            ),
+                          ..._customPoints.map(
+                            (point) => Marker(
+                              point: point,
+                              width: 30,
+                              height: 30,
+                              child: const Icon(
+                                Icons.push_pin,
+                                color: Colors.black,
+                                size: 28,
+                              ),
+                            ),
                           ),
                         ],
                       ),
-                    MarkerLayer(
-                      markers: [
-                        if (_trackedPath.isNotEmpty)
-                          Marker(
-                            point: _trackedPath.first,
-                            width: 40,
-                            height: 40,
-                            child: const Icon(Icons.location_on,
-                                color: Colors.red, size: 30),
-                          ),
-                        if (_lastLocation != null)
-                          Marker(
-                            point: _lastLocation!,
-                            width: 40,
-                            height: 40,
-                            child: const Icon(Icons.circle,
-                                color: Colors.blue, size: 20),
-                          ),
-                        ..._customPoints.map(
-                          (point) => Marker(
-                            point: point,
-                            width: 30,
-                            height: 30,
-                            child: const Icon(Icons.push_pin,
-                                color: Colors.black, size: 28),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-              },
-            ),
+                    ],
+                  );
+                },
+              ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addCustomMarker,
         child: const Icon(Icons.add_location_alt),

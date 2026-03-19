@@ -1,14 +1,33 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
+
+import '../models/encoded_path_model.dart';
 import '../models/path_model.dart';
+import '../utils/path_compression_utils.dart';
 
+/// A screen that visualizes either a raw [PathModel] or an [EncodedPathModel].
 class PathNavigationScreen extends StatefulWidget {
-  final PathModel pathModel;
+  /// The raw path to render when your app is not using encoded routes.
+  final PathModel? pathModel;
 
-  const PathNavigationScreen({super.key, required this.pathModel});
+  /// The encoded path to render when your app stores compressed route data.
+  final EncodedPathModel? encodedPathModel;
+
+  /// Creates a navigation screen for either [pathModel] or [encodedPathModel].
+  ///
+  /// Exactly one of the two inputs must be provided.
+  const PathNavigationScreen({super.key, this.pathModel, this.encodedPathModel})
+    : assert(
+        (pathModel != null) != (encodedPathModel != null),
+        'Provide exactly one of pathModel or encodedPathModel.',
+      );
+
+  /// Returns the underlying raw model regardless of which constructor input was used.
+  PathModel get resolvedPathModel => encodedPathModel?.pathModel ?? pathModel!;
 
   @override
   State<PathNavigationScreen> createState() => _PathNavigationScreenState();
@@ -16,6 +35,7 @@ class PathNavigationScreen extends StatefulWidget {
 
 class _PathNavigationScreenState extends State<PathNavigationScreen> {
   final MapController _mapController = MapController();
+  late final List<LatLng> _navigationPath;
   LatLng? _currentLocation;
   LatLng? _selectedCustomMarker;
   StreamSubscription<Position>? _positionStream;
@@ -23,6 +43,10 @@ class _PathNavigationScreenState extends State<PathNavigationScreen> {
   @override
   void initState() {
     super.initState();
+    _navigationPath =
+        widget.encodedPathModel == null
+            ? List<LatLng>.from(widget.pathModel!.path)
+            : PathCompressionUtils.resolvePath(widget.encodedPathModel!);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _goToCurrentLocation();
       _startLocationUpdates();
@@ -31,33 +55,31 @@ class _PathNavigationScreenState extends State<PathNavigationScreen> {
 
   @override
   void dispose() {
-    _positionStream?.cancel(); // Stop location updates
+    _positionStream?.cancel();
     super.dispose();
   }
 
-  /// Move map to a given LatLng safely
- void _goToPoint(LatLng point) {
+  void _goToPoint(LatLng point) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _mapController.move(point, 16);
+    });
+  }
 
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    _mapController.move(point, 16);
-  });
-}
-
-
-  /// Get and update current location once
   Future<void> _goToCurrentLocation() async {
     try {
-      LocationPermission permission = await Geolocator.requestPermission();
+      final permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
-        if (!mounted) return;
+        if (!mounted) {
+          return;
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Location permission denied")),
         );
         return;
       }
 
-      Position position = await Geolocator.getCurrentPosition(
+      final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
         ),
@@ -65,29 +87,35 @@ class _PathNavigationScreenState extends State<PathNavigationScreen> {
 
       final currentLatLng = LatLng(position.latitude, position.longitude);
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() => _currentLocation = currentLatLng);
       _goToPoint(currentLatLng);
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error getting location: $e")),
-      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error getting location: $e")));
     }
   }
 
-  /// Listen to location updates continuously
   void _startLocationUpdates() {
-    const LocationSettings settings = LocationSettings(
+    const settings = LocationSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: 5,
     );
 
-    _positionStream?.cancel(); // cancel any existing stream
-    _positionStream =
-        Geolocator.getPositionStream(locationSettings: settings).listen((pos) {
+    _positionStream?.cancel();
+    _positionStream = Geolocator.getPositionStream(
+      locationSettings: settings,
+    ).listen((pos) {
       final newLoc = LatLng(pos.latitude, pos.longitude);
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() => _currentLocation = newLoc);
       _goToPoint(newLoc);
     });
@@ -95,8 +123,8 @@ class _PathNavigationScreenState extends State<PathNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final path = widget.pathModel.path;
-    final customPoints = widget.pathModel.customPoints.toSet().toList(); // ensure unique
+    final path = _navigationPath;
+    final customPoints = widget.resolvedPathModel.customPoints.toSet().toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -104,18 +132,20 @@ class _PathNavigationScreenState extends State<PathNavigationScreen> {
         actions: [
           if (customPoints.isNotEmpty)
             DropdownButton<LatLng>(
-              value: customPoints.contains(_selectedCustomMarker)
-                  ? _selectedCustomMarker
-                  : null,
+              value:
+                  customPoints.contains(_selectedCustomMarker)
+                      ? _selectedCustomMarker
+                      : null,
               hint: const Text("Jump to marker"),
               underline: const SizedBox(),
-              items: customPoints.map((p) {
-                final idx = customPoints.indexOf(p) + 1;
-                return DropdownMenuItem<LatLng>(
-                  value: p,
-                  child: Text("Custom $idx"),
-                );
-              }).toList(),
+              items:
+                  customPoints.map((p) {
+                    final idx = customPoints.indexOf(p) + 1;
+                    return DropdownMenuItem<LatLng>(
+                      value: p,
+                      child: Text("Custom $idx"),
+                    );
+                  }).toList(),
               onChanged: (LatLng? point) {
                 if (point != null) {
                   setState(() => _selectedCustomMarker = point);
@@ -128,7 +158,8 @@ class _PathNavigationScreenState extends State<PathNavigationScreen> {
       body: FlutterMap(
         mapController: _mapController,
         options: MapOptions(
-          initialCenter: path.isNotEmpty ? path.first : LatLng(20.0, 77.0),
+          initialCenter:
+              path.isNotEmpty ? path.first : const LatLng(20.0, 77.0),
           initialZoom: 13,
         ),
         children: [
@@ -160,7 +191,11 @@ class _PathNavigationScreenState extends State<PathNavigationScreen> {
                   point: path.last,
                   width: 40,
                   height: 40,
-                  child: const Icon(Icons.location_pin, color: Colors.red, size: 30),
+                  child: const Icon(
+                    Icons.location_pin,
+                    color: Colors.red,
+                    size: 30,
+                  ),
                 ),
               ...customPoints.map(
                 (p) => Marker(
